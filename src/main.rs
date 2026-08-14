@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::process::Command;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -34,7 +35,7 @@ fn main() {
             let output_path = if args.len() >= 4 && args[2] == "-o" {
                 args[3].clone()
             } else {
-                format!("{}.c", input_path.trim_end_matches(".cb"))
+                input_path.trim_end_matches(".cb").to_string()
             };
 
             let src = fs::read_to_string(input_path).unwrap_or_else(|err| {
@@ -43,8 +44,47 @@ fn main() {
             });
 
             let c_code = to_c(&src);
-            fs::write(&output_path, c_code).expect("Failed to write C file");
-            println!("Compiled {} -> {}", input_path, output_path);
+            let intermediate_c_path = format!("{}.temp.c", input_path.trim_end_matches(".cb"));
+
+            fs::write(&intermediate_c_path, c_code).expect("Failed to write intermediate C file");
+
+            println!("Compiling intermediate C code via gcc...");
+
+            let compile_status = Command::new("gcc")
+                .arg(&intermediate_c_path)
+                .arg("-o")
+                .arg(&output_path)
+                .output();
+
+            match compile_status {
+                Ok(output) => {
+                    if output.status.success() {
+                        println!(
+                            "Successfully compiled {} -> native binary: {}",
+                            input_path, output_path
+                        );
+                    } else {
+                        eprintln!("C compilation failed via gcc:");
+                        eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+                        let _ = fs::remove_file(&intermediate_c_path);
+                        std::process::exit(1);
+                    }
+                }
+                Err(err) => {
+                    eprintln!(
+                        "Error: Failed to execute 'gcc'. Make sure a C compiler is installed and added to your PATH.\nDetails: {err}"
+                    );
+                    let _ = fs::remove_file(&intermediate_c_path);
+                    std::process::exit(1);
+                }
+            }
+
+            if let Err(err) = fs::remove_file(&intermediate_c_path) {
+                eprintln!(
+                    "Warning: Failed to clean up temporary file '{}': {}",
+                    intermediate_c_path, err
+                );
+            }
         }
     }
 }
@@ -52,7 +92,9 @@ fn main() {
 fn print_help() {
     println!("C Blunt (.cb) Compiler");
     println!("Usage:");
-    println!("  c_blunt <file.cb> [-o file.c]        Transpile to C source code");
+    println!(
+        "  c_blunt <file.cb> [-o binary]        Compile to native machine code executable via gcc"
+    );
     println!(
         "  c_blunt glasses <file.cb> [-o file.cs] Transpile to C# (putting on glasses lets you C Sharp)"
     );
