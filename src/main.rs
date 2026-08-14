@@ -64,3 +64,40 @@ fn to_c(source: &str) -> String {
     out.push_str("return 0;}");
     out
 }
+
+fn to_cs(input_path: &str, output_path: &str) {
+    let src = fs::read_to_string(input_path).unwrap_or_else(|err| {
+        eprintln!("Error reading file '{input_path}': {err}");
+        std::process::exit(1);
+    });
+
+    let mut out = String::from(
+        "using System;class Program{static void Main(){byte[] tape=new byte[30000];int ptr=0;",
+    );
+
+    for ch in src.chars() {
+        match ch {
+            '▌' => out.push_str("ptr = (ptr + 1) % 30000;"),
+            '▐' => out.push_str("ptr = (ptr == 0) ? 29999 : ptr - 1;"),
+            '▀' => out.push_str("tape[ptr]++;"),
+            '▄' => out.push_str("tape[ptr]--;"),
+            '█' => out.push_str("Console.Write((char)tape[ptr]);"),
+            '░' => out.push_str("tape[ptr]=(byte)Console.Read();"),
+            '▒' => {
+                out.push_str("while(tape[ptr]!=0){{");
+            }
+            '▓' => {
+                out.push_str("}}");
+            }
+            _ => {}
+        }
+    }
+
+    out.push_str("}}");
+
+    fs::write(output_path, out).expect("Failed to write C# file");
+    println!(
+        "Put on glasses! Transpiled {} -> {}",
+        input_path, output_path
+    );
+}
